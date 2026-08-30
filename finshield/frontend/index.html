@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FinShield | Autonomous Banking Risk Investigation</title>
+    <link rel="stylesheet" href="/static/style.css?v=2">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-title">
+                <h1>FinShield</h1>
+                <p>Autonomous Banking Risk Intelligence</p>
+            </div>
+            <div class="header-status">
+                <div class="status-indicator" id="system-status">
+                    <span class="status-dot"></span> System: Checking...
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content Grid -->
+        <main class="dashboard-grid">
+            <!-- Left Column: Input & Voice -->
+            <div class="column-left">
+                <!-- Investigation Input -->
+                <section class="card input-section">
+                    <h2>Customer Investigation</h2>
+                    <form id="investigate-form">
+                        <div class="input-group">
+                            <label for="customer-id">Customer ID</label>
+                            <input type="text" id="customer-id" placeholder="e.g. FIN_000001" required>
+                        </div>
+                        <button type="submit" id="start-btn" class="primary-btn">Start Investigation</button>
+                    </form>
+                    <div id="input-error" class="error-message hidden"></div>
+                </section>
+
+                <!-- Voice UI -->
+                <section class="card voice-section">
+                    <div class="voice-header">
+                        <h2>🎙 Voice Investigation</h2>
+                        <span class="omi-status active">Omi: Ready</span>
+                    </div>
+                    <div class="voice-content">
+                        <div class="voice-state" id="voice-state">Waiting for voice command...</div>
+                        <div class="voice-transcript" id="voice-transcript">
+                            <p class="placeholder-text">Try saying: "Investigate customer FIN 000001"</p>
+                        </div>
+                    </div>
+                </section>
+                
+                <!-- Investigation Trace -->
+                <section class="card trace-section">
+                    <h2>Investigation Workflow</h2>
+                    <div class="trace-container" id="trace-container">
+                        <div class="trace-placeholder">Run an investigation to see the execution trace.</div>
+                        <ul class="trace-list" id="trace-list" style="display: none;">
+                            <!-- Trace items injected here -->
+                        </ul>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Right Column: Results -->
+            <div class="column-right">
+                <!-- Final Risk Assessment -->
+                <section class="card risk-section hidden" id="risk-section">
+                    <div class="risk-header">
+                        <h2>FINAL RISK ASSESSMENT</h2>
+                        <div class="risk-badge" id="risk-level-badge">UNKNOWN</div>
+                    </div>
+                    
+                    <div class="risk-metrics">
+                        <div class="metric">
+                            <span class="metric-label">Risk Score</span>
+                            <span class="metric-value" id="risk-score-value">-</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Confidence</span>
+                            <span class="metric-value" id="confidence-value">-</span>
+                        </div>
+                    </div>
+
+                    <div class="recommendation-box">
+                        <h3>Recommendation</h3>
+                        <div class="rec-value" id="recommendation-value">-</div>
+                    </div>
+                    
+                    <div class="explanation-box">
+                        <h3>Why this result?</h3>
+                        <p id="explanation-text">-</p>
+                    </div>
+                </section>
+
+                <!-- Risk Breakdown & Evidence -->
+                <section class="card breakdown-section hidden" id="breakdown-section">
+                    <h2>Risk Breakdown & Evidence</h2>
+                    <div class="breakdown-grid" id="breakdown-grid">
+                        <!-- Breakdown items injected here -->
+                    </div>
+                </section>
+                
+                <!-- Historical Memory -->
+                <section class="card historical-section hidden" id="historical-section">
+                    <h2>Historical Memory</h2>
+                    <p class="historical-disclaimer">Historical similarity is supporting evidence, not a direct decision rule.</p>
+                    <div class="historical-list" id="historical-list">
+                        <!-- Historical cases injected here -->
+                    </div>
+                </section>
+                
+                <div class="human-disclaimer">
+                    <p>⚠ FinShield provides an analytical recommendation. Final banking decisions remain with an authorized human officer.</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/app.js?v=2"></script>
+</body>
+</html>
