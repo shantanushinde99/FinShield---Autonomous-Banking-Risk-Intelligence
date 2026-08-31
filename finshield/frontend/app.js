@@ -207,11 +207,11 @@ function renderResults(state) {
                  evidenceHtml += `<li>${item}</li>`;
             });
         } else {
-            evidenceHtml = `<li style="color: rgba(255,255,255,0.4); list-style-type: none; padding-left: 0;">No notable indicators found.</li>`;
+            evidenceHtml = `<li class="no-evidence" style="color: rgba(255,255,255,0.4); list-style-type: none; padding-left: 0;">No notable indicators found.</li>`;
         }
         
         const card = document.createElement("div");
-        card.className = "breakdown-card";
+        card.className = "breakdown-card-item";
         const riskClass = cat.data[cat.levelKey] ? `risk-${cat.data[cat.levelKey]}` : '';
         
         card.innerHTML = `
@@ -240,7 +240,7 @@ function renderResults(state) {
             const txnVolume = extract(/Total transaction volume:\s*(₹[\d,.]+)/);
             const cashOut = extract(/Cash-out transactions:\s*(\d+)/);
             const fraudTx = extract(/Fraud transactions:\s*(\d+)/);
-            const completion = extract(/Payment completion:\s*([^ ]+)/);
+            const completion = extract(/Payment completion:\s*([^\s]+)/);
             
             const div = document.createElement("div");
             div.className = "historical-item";

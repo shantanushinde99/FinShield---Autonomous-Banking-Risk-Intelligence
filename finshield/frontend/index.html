@@ -8,111 +8,122 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="app-container">
-        <!-- Header -->
-        <header class="app-header">
-            <div class="header-title">
-                <h1>FinShield</h1>
-                <p>Autonomous Banking Risk Intelligence</p>
-            </div>
-            <div class="header-status">
-                <div class="status-indicator" id="system-status">
-                    <span class="status-dot"></span> System: Checking...
+    <div class="app-layout">
+        <!-- Left Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <div class="brand-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                </div>
+                <div class="brand-text">
+                    <h1>FinShield AI</h1>
+                    <p>RISK INTELLIGENCE</p>
                 </div>
             </div>
-        </header>
 
-        <!-- Main Content Grid -->
-        <main class="dashboard-grid">
-            <!-- Left Column: Input & Voice -->
-            <div class="column-left">
-                <!-- Investigation Input -->
-                <section class="card input-section">
-                    <h2>Customer Investigation</h2>
+            <div class="sidebar-section">
+                <div class="sidebar-heading">INVESTIGATION</div>
+                <div class="sidebar-card">
                     <form id="investigate-form">
-                        <div class="input-group">
-                            <label for="customer-id">Customer ID</label>
-                            <input type="text" id="customer-id" placeholder="e.g. FIN_000001" required>
-                        </div>
-                        <button type="submit" id="start-btn" class="primary-btn">Start Investigation</button>
+                        <label for="customer-id">CUSTOMER ID</label>
+                        <input type="text" id="customer-id" placeholder="e.g. FIN_000001" required>
+                        <button type="submit" id="start-btn" class="primary-btn">Analyze Risk</button>
                     </form>
                     <div id="input-error" class="error-message hidden"></div>
-                </section>
-
-                <!-- Voice UI -->
-                <section class="card voice-section">
-                    <div class="voice-header">
-                        <h2>🎙 Voice Investigation</h2>
-                        <span class="omi-status active">Omi: Ready</span>
-                    </div>
-                    <div class="voice-content">
-                        <div class="voice-state" id="voice-state">Waiting for voice command...</div>
-                        <div class="voice-transcript" id="voice-transcript">
-                            <p class="placeholder-text">Try saying: "Investigate customer FIN 000001"</p>
-                        </div>
-                    </div>
-                </section>
-                
-                <!-- Investigation Trace -->
-                <section class="card trace-section">
-                    <h2>Investigation Workflow</h2>
-                    <div class="trace-container" id="trace-container">
-                        <div class="trace-placeholder">Run an investigation to see the execution trace.</div>
-                        <ul class="trace-list" id="trace-list" style="display: none;">
-                            <!-- Trace items injected here -->
-                        </ul>
-                    </div>
-                </section>
+                </div>
             </div>
 
-            <!-- Right Column: Results -->
-            <div class="column-right">
-                <!-- Final Risk Assessment -->
-                <section class="card risk-section hidden" id="risk-section">
-                    <div class="risk-header">
-                        <h2>FINAL RISK ASSESSMENT</h2>
-                        <div class="risk-badge" id="risk-level-badge">UNKNOWN</div>
+            <div class="sidebar-section">
+                <div class="sidebar-heading">VOICE COMMAND (OMI)</div>
+                <div class="sidebar-card voice-panel">
+                    <div class="voice-header">
+                        <span class="voice-title">🎙 Live Listener</span>
+                        <span class="status-indicator active">Ready</span>
                     </div>
+                    <div class="voice-state" id="voice-state">Waiting for command...</div>
+                    <div class="voice-transcript" id="voice-transcript">
+                        <p class="placeholder-text">Try: "Investigate customer FIN 000001"</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sidebar-section trace-wrapper">
+                <div class="sidebar-heading">AI WORKFLOW TRACE</div>
+                <div class="trace-container" id="trace-container">
+                    <div class="trace-placeholder">Idle</div>
+                    <ul class="trace-list" id="trace-list" style="display: none;"></ul>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Ambient Lighting Layers -->
+            <div class="ambient-blob blob-1"></div>
+            <div class="ambient-blob blob-2"></div>
+
+            <header class="top-header">
+                <div class="header-titles">
+                    <h2>Predictive Analytics Hub</h2>
+                    <p>AI-powered banking intelligence, risk forecasting, and security analysis.</p>
+                </div>
+                <div class="header-actions">
+                    <div class="system-health" id="system-status">
+                        <span class="health-dot"></span> System Healthy
+                    </div>
+                </div>
+            </header>
+
+            <div class="dashboard-scroll-area">
+                <!-- Bento Risk Section -->
+                <section class="bento-grid hidden" id="risk-section">
                     
-                    <div class="risk-metrics">
-                        <div class="metric">
-                            <span class="metric-label">Risk Score</span>
-                            <span class="metric-value" id="risk-score-value">-</span>
-                        </div>
-                        <div class="metric">
-                            <span class="metric-label">Confidence</span>
-                            <span class="metric-value" id="confidence-value">-</span>
-                        </div>
+                    <div class="bento-tile glass-panel tile-score">
+                        <span class="tile-label">RISK SCORE</span>
+                        <span class="tile-value hero-value" id="risk-score-value">-</span>
                     </div>
 
-                    <div class="recommendation-box">
-                        <h3>Recommendation</h3>
+                    <div class="bento-tile glass-panel tile-conf">
+                        <span class="tile-label">CONFIDENCE</span>
+                        <span class="tile-value" id="confidence-value">-</span>
+                    </div>
+
+                    <div class="bento-tile glass-panel tile-rec">
+                        <div class="tile-header-flex">
+                            <span class="tile-label">AI RECOMMENDATION</span>
+                            <div class="risk-badge" id="risk-level-badge">UNKNOWN</div>
+                        </div>
                         <div class="rec-value" id="recommendation-value">-</div>
                     </div>
                     
-                    <div class="explanation-box">
-                        <h3>Why this result?</h3>
-                        <p id="explanation-text">-</p>
+                    <div class="bento-tile glass-panel tile-explain span-full">
+                        <span class="tile-label">WHY THIS RESULT?</span>
+                        <div class="explanation-content" id="explanation-text">-</div>
                     </div>
+
                 </section>
 
                 <!-- Risk Breakdown & Evidence -->
-                <section class="card breakdown-section hidden" id="breakdown-section">
-                    <h2>Risk Breakdown & Evidence</h2>
+                <section class="glass-panel hidden" id="breakdown-section">
+                    <div class="panel-header">
+                        <h3 class="panel-title">AI Performance Matrix</h3>
+                    </div>
                     <div class="breakdown-grid" id="breakdown-grid">
                         <!-- Breakdown items injected here -->
                     </div>
                 </section>
                 
                 <!-- Historical Memory -->
-                <section class="card historical-section hidden" id="historical-section">
-                    <h2>Historical Memory</h2>
-                    <p class="historical-disclaimer">Historical similarity is supporting evidence, not a direct decision rule.</p>
+                <section class="glass-panel hidden" id="historical-section">
+                    <div class="panel-header-flex">
+                        <h3 class="panel-title">Historical Memory Match</h3>
+                        <span class="historical-disclaimer">Supporting evidence only</span>
+                    </div>
                     <div class="historical-list" id="historical-list">
                         <!-- Historical cases injected here -->
                     </div>
                 </section>
-                
+
                 <div class="human-disclaimer">
                     <p>⚠ FinShield provides an analytical recommendation. Final banking decisions remain with an authorized human officer.</p>
                 </div>
