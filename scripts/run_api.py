@@ -27,6 +27,11 @@ def main():
             print("Database successfully copied to local storage!")
         except Exception as e:
             print(f"Warning: Failed to copy database to /tmp: {e}")
+            print("DEBUG: Contents of /home/data:")
+            try:
+                print(os.listdir("/home/data"))
+            except Exception as ls_e:
+                print(f"Could not list /home/data: {ls_e}")
     # -----------------------------
     
     uvicorn.run("finshield.api.main:app", host="0.0.0.0", port=8000, reload=True)
