@@ -61,4 +61,12 @@ class FinancialMemoryService:
         Builds a semantic query from the investigation context and retrieves similar historical cases.
         """
         query_text = MemoryDocumentBuilder.build_query_document(context)
-        return self.search_similar_cases(query_text, limit=limit, filters={"memory_type": "historical_financial_case"})
+        
+        # Base filter to only search financial cases
+        filters = {"memory_type": "historical_financial_case"}
+        
+        # If the current customer has fraud, force Qdrant to ONLY fetch historical cases that ALSO have fraud.
+        if context.financial_context.has_prior_fraud_flags:
+            filters["has_prior_fraud_flags"] = True
+            
+        return self.search_similar_cases(query_text, limit=limit, filters=filters)
