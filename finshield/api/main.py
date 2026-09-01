@@ -5,6 +5,7 @@ from fastapi.staticfiles import StaticFiles
 import logging
 import uuid
 import os
+from contextlib import asynccontextmanager
 
 from finshield.api.omi_routes import router as omi_router
 from finshield.api.investigation_routes import router as investigation_router
@@ -15,10 +16,32 @@ from finshield.exceptions import CustomerNotFoundError
 logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # --- AZURE BLOB STORAGE FIX ---
+    # We download the database directly from Azure Blob Storage into the container's local memory (/tmp).
+    # This prevents any SMB locking issues and ensures lightning-fast performance.
+    download_url = os.environ.get("DUCKDB_DOWNLOAD_URL", "")
+    if download_url:
+        import urllib.request
+        logger.info("Detected DUCKDB_DOWNLOAD_URL! Downloading database from Azure Blob Storage...")
+        tmp_path = "/tmp/finshield.duckdb"
+        try:
+            # We use urlretrieve for an efficient streaming download
+            urllib.request.urlretrieve(download_url, tmp_path)
+            os.environ["DUCKDB_PATH"] = tmp_path
+            logger.info(f"✅ Database successfully downloaded to {tmp_path}!")
+        except Exception as e:
+            logger.error(f"❌ Error downloading database: {e}")
+    # -----------------------------
+    yield
+    # Cleanup (if any) happens here
+
 app = FastAPI(
     title="FinShield API",
     description="Backend API for FinShield Autonomous Banking Risk & Fraud Investigator",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # CORS middleware for potential frontend access
