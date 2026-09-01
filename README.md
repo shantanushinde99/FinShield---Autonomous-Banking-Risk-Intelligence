@@ -54,6 +54,7 @@ FinShield solves this by decoupling *reasoning* from *data retrieval*:
 | 🗄️ **Qdrant** | **Semantic Vector Memory.** Stores high-dimensional embeddings of historical fraud cases for rapid similarity matching. |
 | 🧠 **Mistral / GPT-4** | **Cognitive Synthesis.** Analyzes the raw data outputs from all agents to formulate a human-readable recommendation. |
 | 🦆 **DuckDB** | **Analytical Data Layer.** Executes lightning-fast, parameterized SQL queries on 50,000+ customer records. |
+| ☁️ **Azure Cloud** | **App Service & Blob Storage.** Hosts the production Docker container and streams the DuckDB database securely into memory at runtime to bypass SMB locks. |
 | ⚡ **FastAPI & Vanilla JS** | **Backend & Live UI.** Provides API hardening, asynchronous state polling, and a completely framework-less, lightning-fast frontend. |
 
 ---
@@ -86,8 +87,11 @@ flowchart TD
     A_Hist[Historical Agent]:::agent
     
     %% Data Stores
+    Blob[(Azure Blob\nStorage)]:::data
     DB[(DuckDB\nFinancial Data)]:::data
     Q[(Qdrant\nSemantic Memory)]:::data
+    
+    Blob -. "Streams at Startup\nvia SAS URL" .-> DB
     
     %% Endpoints
     M[Mistral LLM\nFinal Synthesis]:::agent
@@ -239,9 +243,22 @@ pytest tests/ -v
 
 ## 🚢 Production Deployment
 
+### Docker Deployment
 A production-ready `Dockerfile` is included. It uses `python:3.12-slim`, exposes port `8000`, and integrates `/health/dependencies` checks for Kubernetes/load-balancer liveness probes.
 
 ```bash
 docker build -t finshield .
 docker run -p 8000:8000 --env-file .env finshield
 ```
+
+### Azure App Service Deployment
+FinShield is architected to run seamlessly on **Azure App Service (Linux Containers)**. 
+
+To prevent SMB file-locking issues that occur when mounting SQLite/DuckDB databases on Azure's persistent `/home` volumes, the architecture utilizes **Azure Blob Storage**.
+
+1. Upload your generated `finshield.duckdb` file to a secure Azure Blob Container.
+2. Generate a Read-Only SAS URL for the blob.
+3. In your Azure App Service Configuration, set the `DUCKDB_DOWNLOAD_URL` environment variable to your SAS URL.
+4. Set your Omi Webhook to point to your live Azure domain (e.g., `https://<your-app-name>.azurewebsites.net/api/v1/omi/webhook`).
+
+At container startup, the application securely streams the DuckDB file into the high-speed `/tmp` ephemeral storage layer, ensuring zero database locking errors and lightning-fast read performance.
