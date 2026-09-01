@@ -71,7 +71,8 @@ flowchart TD
     %% Define Styles
     classDef hardware fill:#0f172a,stroke:#3b82f6,stroke-width:2px,color:#fff
     classDef backend fill:#1e293b,stroke:#10b981,stroke-width:2px,color:#fff
-    classDef agent fill:#334155,stroke:#f59e0b,stroke-width:2px,color:#fff
+    classDef agent_math fill:#059669,stroke:#34d399,stroke-width:2px,color:#fff
+    classDef agent_api fill:#b91c1c,stroke:#f87171,stroke-width:2px,color:#fff
     classDef data fill:#0f172a,stroke:#8b5cf6,stroke-width:2px,color:#fff
     
     %% Components
@@ -79,22 +80,28 @@ flowchart TD
     W[FastAPI Webhook Gateway]:::backend
     
     %% Agents
-    O_Lyzr[Lyzr Orchestrator]:::agent
-    A_Prof[Profile Agent]:::agent
-    A_Cred[Credit Agent]:::agent
-    A_Txn[Transaction Agent]:::agent
-    A_Fraud[Fraud Agent]:::agent
-    A_Hist[Historical Agent]:::agent
+    O_Lyzr[Lyzr Orchestrator]:::backend
+    
+    subgraph local_agents ["Local Deterministic Agents (Math & SQL)"]
+        A_Prof[Profile Agent]:::agent_math
+        A_Cred[Credit Agent]:::agent_math
+        A_Txn[Transaction Agent]:::agent_math
+        A_Fraud[Fraud Agent]:::agent_math
+    end
+    
+    subgraph cloud_agents ["Cloud API Agents (Embeddings & LLM)"]
+        A_Hist[Historical Agent]:::agent_api
+        M[Mistral LLM\nFinal Synthesis]:::agent_api
+    end
     
     %% Data Stores
     Blob[(Azure Blob\nStorage)]:::data
-    DB[(DuckDB\nFinancial Data)]:::data
-    Q[(Qdrant\nSemantic Memory)]:::data
+    DB[(DuckDB\nLocal Data)]:::data
+    Q[(Qdrant Cloud\nVector API)]:::data
     
     Blob -. "Streams at Startup\nvia SAS URL" .-> DB
     
     %% Endpoints
-    M[Mistral LLM\nFinal Synthesis]:::agent
     UI[Live Dashboard\nVanilla JS]:::hardware
 
     %% Flow
@@ -112,11 +119,17 @@ flowchart TD
     A_Txn -. "Deterministic SQL" .-> DB
     A_Fraud -. "Deterministic SQL" .-> DB
     
-    A_Hist -. "Vector Similarity Search" .-> Q
+    A_Hist -. "API Call:\nEmbedding & Search" .-> Q
     
     A_Prof & A_Cred & A_Txn & A_Fraud & A_Hist --> M
-    M -- "Structured RiskAssessment JSON" --> UI
+    M -- "API Call:\nSynthesis to JSON" --> UI
 ```
+
+### 🧠 Agent Execution Strategy: Math vs. APIs
+A core philosophy of FinShield is separating **deterministic calculation** from **probabilistic synthesis** to ensure enterprise-grade reliability and avoid LLM hallucination on financial numbers.
+
+- 🟢 **Local Deterministic Agents (No APIs):** The Profile, Credit, Transaction, and Fraud agents **do not** make LLM API calls. They run locally within the Python environment, executing highly optimized, deterministic SQL queries against DuckDB to calculate exact math (e.g., transaction volumes, fraud ratios). This guarantees 100% mathematical accuracy and near-zero latency.
+- 🔴 **Cloud API Agents:** The Historical Agent makes an external API call to embed the current case (via Mistral Embeddings) and searches the Qdrant Cloud cluster. Finally, the Mistral LLM agent makes a single API call at the very end of the pipeline to synthesize the raw math provided by the deterministic agents into a human-readable recommendation.
 
 ### 2. Execution Loop: Voice-to-Decision Sequence
 This sequence diagram shows the real-time temporal flow of a single voice command.
