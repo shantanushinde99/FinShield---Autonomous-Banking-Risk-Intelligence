@@ -24,12 +24,15 @@ async def lifespan(app: FastAPI):
     download_url = os.environ.get("DUCKDB_DOWNLOAD_URL", "")
     if download_url:
         import urllib.request
+        from finshield.config.settings import settings
         logger.info("Detected DUCKDB_DOWNLOAD_URL! Downloading database from Azure Blob Storage...")
         tmp_path = "/tmp/finshield.duckdb"
         try:
             # We use urlretrieve for an efficient streaming download
             urllib.request.urlretrieve(download_url, tmp_path)
+            # Update both the environment AND the already-instantiated Pydantic settings object!
             os.environ["DUCKDB_PATH"] = tmp_path
+            settings.duckdb_path = tmp_path
             logger.info(f"✅ Database successfully downloaded to {tmp_path}!")
         except Exception as e:
             logger.error(f"❌ Error downloading database: {e}")
