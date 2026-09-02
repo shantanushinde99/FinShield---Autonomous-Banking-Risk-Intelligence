@@ -39,7 +39,7 @@ Instantly, FinShield springs to life:
 Isolated prompts and simple RAG (Retrieval-Augmented Generation) have hit a ceiling. Financial compliance demands **deterministic execution** and **explainability**. 
 
 FinShield solves this by decoupling *reasoning* from *data retrieval*:
-- **Specialized DAG Execution**: Instead of asking one LLM to do everything, FinShield uses a Lyzr Directed Acyclic Graph (DAG) to launch specialized sub-agents. The Credit Agent ONLY runs deterministic SQL against DuckDB; it doesn't invent math.
+- **Specialized DAG Execution**: Instead of asking one LLM to do everything, FinShield uses a Lyzr Directed Acyclic Graph (DAG) to launch specialized sub-agents. The Analytical Agents (e.g., Profile, Credit, Transaction, Fraud) ONLY run deterministic SQL against DuckDB; they don't invent math.
 - **Stateful & Observable**: Every agent's execution latency, status, and output is fully observable in real-time on the UI.
 - **Semantic Institutional Memory**: By embedding past case files into Qdrant, the system develops "intuition", warning officers if a seemingly safe customer matches the behavioral profile of a historical default.
 
@@ -130,6 +130,39 @@ A core philosophy of FinShield is separating **deterministic calculation** from 
 
 - 🟢 **Local Deterministic Agents (No APIs):** The Profile, Credit, Transaction, and Fraud agents **do not** make LLM API calls. They run locally within the Python environment, executing highly optimized, deterministic SQL queries against DuckDB to calculate exact math (e.g., transaction volumes, fraud ratios). This guarantees 100% mathematical accuracy and near-zero latency.
 - 🔴 **Cloud API Agents:** The Historical Agent makes an external API call to embed the current case (via Mistral Embeddings) and searches the Qdrant Cloud cluster. Finally, the Mistral LLM agent makes a single API call at the very end of the pipeline to synthesize the raw math provided by the deterministic agents into a human-readable recommendation.
+
+### 🌐 Semantic Memory Pipeline (Mistral + Qdrant)
+Traditional banking systems only check exact keyword matches or hardcoded rules. FinShield uses **Vector Embeddings** to give the AI "intuition" about customer behavior. 
+
+#### Retrieval Methodology: Top-K with Metadata Pre-Filtering
+FinShield uses a **hybrid vector search strategy**:
+1. **Metadata Pre-Filtering**: Before any math happens, Qdrant applies hard filters (e.g., `has_prior_fraud_flags == True`) to instantly narrow the search space to relevant case types.
+2. **Top-K Dense Retrieval (K=5)**: Using Cosine Similarity on 1024-dimensional Mistral embeddings, the system retrieves the top 5 (Top-K) most mathematically similar historical cases to the current customer's profile.
+
+#### Pipeline Flow
+```mermaid
+sequenceDiagram
+    participant Profile as Customer Profile
+    participant Mistral as Mistral Embeddings API
+    participant Qdrant as Qdrant Vector DB (Cloud)
+    participant LLM as Final LLM Synthesis
+    
+    %% Ingestion Phase
+    Note over Mistral,Qdrant: Phase 1: Institutional Memory Ingestion
+    Mistral->>Mistral: Convert 1,000+ historical cases to 1024D vectors
+    Mistral->>Qdrant: Upsert Vectors + Metadata Payloads
+    
+    %% Retrieval Phase
+    Note over Profile,LLM: Phase 2: Live Investigation (Top-K Retrieval)
+    Profile->>Mistral: Embed live customer text profile
+    Mistral-->>Qdrant: Query Vector
+    
+    Qdrant->>Qdrant: 1. Hard Pre-filter (e.g., fraud==true)
+    Qdrant->>Qdrant: 2. Cosine Similarity Match
+    Qdrant-->>LLM: Return Top-K (K=5) similar cases
+    
+    LLM->>LLM: Synthesize historical context into Risk Decision
+```
 
 ### 2. Execution Loop: Voice-to-Decision Sequence
 This sequence diagram shows the real-time temporal flow of a single voice command.
