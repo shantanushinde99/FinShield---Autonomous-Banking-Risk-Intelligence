@@ -9,7 +9,7 @@ class Settings(BaseSettings):
 
     qdrant_url: str = ""
     qdrant_api_key: str = ""
-    qdrant_collection_name: str = "finshield_memory"
+    qdrant_collection_name: str = "finshield_case_memory"
     
     mistral_api_key: str = ""
 

@@ -97,11 +97,11 @@ def test_run_investigation_workflow(mock_asyncio, mock_studio, mock_investigatio
 def test_orchestrator_failure_still_completes_dag(mock_studio, mock_investigation_state):
     mock_studio.return_value.agents.create.side_effect = RuntimeError("Lyzr down")
     orchestrator = FinShieldOrchestrator()
-
+    
     steps = [(attr, MagicMock()) for attr, _ in DAG_STEPS]
     with patch("finshield.orchestration.lyzr_workflow.DAG_STEPS", steps):
         orchestrator.run_investigation_workflow(mock_investigation_state)
-
+    
     for _, step in steps:
         step.assert_called_once()
     mock_studio.return_value.agents.delete.assert_not_called()

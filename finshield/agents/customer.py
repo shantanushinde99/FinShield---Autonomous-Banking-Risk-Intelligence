@@ -18,7 +18,8 @@ class CustomerProfileAgent:
             if profile.employment_years and profile.employment_years > 2.0:
                 stability_indicators.append(f"Stable employment history ({profile.employment_years:.1f} years)")
             elif profile.employment_years and profile.employment_years < 0:
-                observations.append("Employment data anomaly (negative years)")
+                # Home Credit encodes pensioners / no current employer as negative years
+                observations.append("Pensioner or no current employer on record")
                 
             if profile.owns_car == 'Y' or profile.owns_realty == 'Y':
                 stability_indicators.append("Owns hard assets (car or real estate)")

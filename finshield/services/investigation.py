@@ -10,6 +10,12 @@ from finshield.orchestration.lyzr_workflow import FinShieldOrchestrator
 
 class InvestigationContextService:
     @staticmethod
+    def has_fraud_flags(transaction_summary) -> bool:
+        return bool(transaction_summary) and (
+            transaction_summary.fraud_transaction_count > 0 or transaction_summary.flagged_transaction_count > 0
+        )
+
+    @staticmethod
     def build_context(customer_id: str, investigation_id: Optional[str] = None) -> InvestigationContext:
         """
         Assembles a comprehensive InvestigationContext for a given customer.
@@ -36,7 +42,6 @@ class InvestigationContextService:
         # 5. Derived Metrics Calculation
         total_exposure = 0.0
         income_to_debt_ratio = None
-        has_prior_fraud_flags = False
 
         if profile:
             if profile.bureau_total_outstanding_debt:
@@ -47,9 +52,7 @@ class InvestigationContextService:
             if profile.total_income and profile.total_income > 0 and total_exposure > 0:
                 income_to_debt_ratio = profile.total_income / total_exposure
                 
-        if transaction_summary:
-            if transaction_summary.fraud_transaction_count > 0 or transaction_summary.flagged_transaction_count > 0:
-                has_prior_fraud_flags = True
+        has_prior_fraud_flags = InvestigationContextService.has_fraud_flags(transaction_summary)
 
         financial_context = CustomerFinancialContext(
             customer_id=customer_id,

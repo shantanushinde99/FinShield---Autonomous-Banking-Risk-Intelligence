@@ -254,6 +254,12 @@ function renderResults(state) {
         document.getElementById("historical-section").classList.remove("hidden");
         const list = document.getElementById("historical-list");
         list.innerHTML = "";
+        (state.historical.common_patterns || []).forEach(p => {
+            const summary = document.createElement("p");
+            summary.className = "historical-summary";
+            summary.textContent = p;
+            list.appendChild(summary);
+        });
         
         state.historical.similar_cases.forEach(c => {
             
@@ -273,7 +279,7 @@ function renderResults(state) {
             div.innerHTML = `
                 <div class="historical-item-header">
                     <span>${esc(c.case_id)}</span>
-                    <span class="sim-score">Similarity: ${(c.similarity_score || 0).toFixed(4)} <span class="risk-badge risk-${esc(c.risk_level)}">${esc(c.risk_level)}</span></span>
+                    <span class="sim-score">Similarity: ${(c.similarity_score || 0).toFixed(4)} <span class="risk-badge ${c.outcome === "DEFAULTED" ? "risk-HIGH" : "risk-LOW"}">${esc(c.outcome)}</span></span>
                 </div>
                 <div class="historical-metrics-grid">
                     <div class="metric-chip"><span class="label">Income</span><span class="val">${income}</span></div>

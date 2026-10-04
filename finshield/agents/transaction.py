@@ -5,6 +5,9 @@ class TransactionAnalysisAgent:
     """
     Deterministically evaluates transaction patterns, focusing on anomalies and behavioral shifts.
     """
+    # A ratio over 1-2 transactions is noise: in the current dataset 99.9% of accounts
+    # have a single transaction, so a lone cash-out would otherwise read as "100% cash-out".
+    MIN_TXNS_FOR_PATTERNS = 5
     
     def analyze(self, context: InvestigationContext) -> TransactionRiskAssessment:
         t_summary = context.financial_context.transaction_summary
@@ -26,7 +29,12 @@ class TransactionAnalysisAgent:
             )
             
         # Cash-out anomaly check
-        if t_summary.transaction_count > 0:
+        if 0 < t_summary.transaction_count < self.MIN_TXNS_FOR_PATTERNS:
+            behavioral_indicators.append(
+                f"Insufficient history to assess cash-out patterns "
+                f"({t_summary.transaction_count} transaction{'s' if t_summary.transaction_count != 1 else ''})"
+            )
+        elif t_summary.transaction_count >= self.MIN_TXNS_FOR_PATTERNS:
             cash_out_ratio = t_summary.cash_out_count / t_summary.transaction_count
             if cash_out_ratio > 0.8:
                 anomalies.append(f"Unusually high proportion of cash-out transactions ({cash_out_ratio*100:.0f}%)")

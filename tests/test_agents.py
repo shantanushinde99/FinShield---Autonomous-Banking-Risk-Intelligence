@@ -97,12 +97,20 @@ def test_fraud_agent_confirmed(base_context):
     assert result.confirmed_fraud_count == 2
     assert result.fraud_risk_score == 100.0
 
-def test_credit_agent_high_debt_burden(base_context):
-    # income / exposure = 0.1 -> debt is 10x income
-    base_context.financial_context.income_to_debt_ratio = 0.1
+def test_credit_agent_debt_ratio_is_informational(base_context):
+    # Ratio showed no lift on real defaults, so it must not move the level
+    base_context.financial_context.income_to_debt_ratio = 0.05
     result = CreditRiskAgent().analyze(base_context)
-    assert result.risk_level == "MEDIUM"
-    assert any("High debt burden" in f for f in result.key_factors)
+    assert result.risk_level == "LOW"
+    assert "income_to_debt_ratio" not in result.metrics
+
+def test_transaction_agent_ignores_ratio_on_thin_history(base_context):
+    ts = base_context.financial_context.transaction_summary
+    ts.transaction_count, ts.cash_out_count = 1, 1
+    result = TransactionAnalysisAgent().analyze(base_context)
+    assert result.risk_level == "LOW"
+    assert result.anomalies == []
+    assert any("Insufficient history" in b for b in result.behavioral_indicators)
 
 def test_context_income_to_debt_ratio_direction():
     from unittest.mock import patch

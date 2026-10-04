@@ -5,10 +5,10 @@ class CreditRiskAgent:
     """
     Deterministically evaluates credit risk based on debt metrics and repayment history.
     """
-    # income / (bureau debt + requested credit). On the current dataset ~71% of
-    # customers fall below 0.3 and ~0.2% above 2.0 — tune here if that's too noisy.
-    HIGH_DEBT_BURDEN_RATIO = 0.3
-    STRONG_COVERAGE_RATIO = 2.0
+    # Rules are kept only where they separate real defaults (Home Credit TARGET, 50k
+    # customers, 8.0% base rate): overdue debt 16.5%, payment completion <80% 13.6%,
+    # bureau score >30 10.3%. Income-to-debt ratio showed no lift (7.0-8.6% across every
+    # decile), so it is deliberately left out: the LLM treated it as evidence when shown.
 
     def analyze(self, context: InvestigationContext) -> CreditRiskAssessment:
         fc = context.financial_context
@@ -59,22 +59,11 @@ class CreditRiskAgent:
                 if risk_level != "HIGH":
                     risk_level = "MEDIUM_HIGH"
                     
-        # Income to Debt Ratio
-        if fc.income_to_debt_ratio is not None:
-            ratio = fc.income_to_debt_ratio
-            metrics["income_to_debt_ratio"] = ratio
-            if ratio < self.HIGH_DEBT_BURDEN_RATIO and metrics["outstanding_debt"] > 0:
-                key_factors.append(f"High debt burden relative to income (Ratio: {ratio:.2f})")
-                score += 20.0
-                if risk_level == "LOW":
-                    risk_level = "MEDIUM"
-            elif ratio > self.STRONG_COVERAGE_RATIO:
-                positive_factors.append(f"Strong income to debt coverage (Ratio: {ratio:.2f})")
-                
         # Existing credit risk score mapping (if any)
         if profile.credit_risk_score:
             metrics["bureau_credit_risk_score"] = profile.credit_risk_score
             if profile.credit_risk_score > 30.0:
+                key_factors.append(f"Elevated bureau credit risk score ({profile.credit_risk_score:.0f})")
                 score += 10.0
                 
         # Final capping and heuristics

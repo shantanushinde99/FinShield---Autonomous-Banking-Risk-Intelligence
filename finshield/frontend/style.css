@@ -568,6 +568,12 @@ input[type="text"]:focus {
     color: var(--text-muted);
 }
 
+.historical-summary {
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 12px;
+}
+
 .historical-item {
     background: rgba(255,255,255,0.02);
     border: 1px solid var(--border-glass);

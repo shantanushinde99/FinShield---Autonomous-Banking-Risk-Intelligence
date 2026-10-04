@@ -1,68 +1,66 @@
 import logging
+from functools import lru_cache
 from typing import List, Dict, Any
+
+from qdrant_client.http import models as rest
+
 from finshield.qdrant.client import get_qdrant_client
-from finshield.services.embedding import MistralEmbeddingService
 from finshield.config.settings import settings
 from finshield.models.domain import InvestigationContext
-from finshield.services.memory_builder import MemoryDocumentBuilder
+from finshield.services.memory_builder import profile_vector
 
 logger = logging.getLogger(__name__)
+
+
+def _match(key: str, value: Any) -> rest.FieldCondition:
+    return rest.FieldCondition(key=key, match=rest.MatchValue(value=value))
+
 
 class FinancialMemoryService:
     def __init__(self):
         self.qdrant = get_qdrant_client()
-        self.embedder = MistralEmbeddingService()
         self.collection_name = settings.qdrant_collection_name
-
-    def search_similar_cases(self, query_text: str, limit: int = 5, filters: Dict[str, Any] = None) -> List[Dict[str, Any]]:
-        """
-        Searches Qdrant for similar historical financial cases based on arbitrary text.
-        """
-        vector = self.embedder.embed_text(query_text)
-
-        # Construct Qdrant filter if provided
-        query_filter = None
-        if filters:
-            from qdrant_client.http import models as rest
-            must_conditions = []
-            for k, v in filters.items():
-                must_conditions.append(rest.FieldCondition(
-                    key=k,
-                    match=rest.MatchValue(value=v)
-                ))
-            query_filter = rest.Filter(must=must_conditions)
-
-        response = self.qdrant.query_points(
-            collection_name=self.collection_name,
-            query=vector,
-            query_filter=query_filter,
-            limit=limit
-        )
-
-        # Format results
-        formatted_results = []
-        for hit in response.points:
-            formatted_results.append({
-                "case_id": hit.payload.get("case_id"),
-                "similarity_score": hit.score,
-                "risk_level": hit.payload.get("risk_level"),
-                "metadata": hit.payload,
-                "case_summary": hit.payload.get("text", "")[:500] + "..." # return prefix
-            })
-            
-        return formatted_results
 
     def search_similar_cases_for_customer(self, context: InvestigationContext, limit: int = 5) -> List[Dict[str, Any]]:
         """
-        Builds a semantic query from the investigation context and retrieves similar historical cases.
+        Retrieves the past customers whose profiles are closest to this one, with their loan outcomes.
         """
-        query_text = MemoryDocumentBuilder.build_query_document(context)
-        
-        # Base filter to only search financial cases
-        filters = {"memory_type": "historical_financial_case"}
-        
-        # If the current customer has fraud, force Qdrant to ONLY fetch historical cases that ALSO have fraud.
-        if context.financial_context.has_prior_fraud_flags:
-            filters["has_prior_fraud_flags"] = True
-            
-        return self.search_similar_cases(query_text, limit=limit, filters=filters)
+        fc = context.financial_context
+        if not fc.profile:
+            return []
+
+        # A customer is never their own precedent
+        query_filter = rest.Filter(must_not=[_match("customer_id", fc.customer_id)])
+        # If the current customer has fraud, compare only against past customers who ALSO had fraud
+        if fc.has_prior_fraud_flags:
+            query_filter.must = [_match("has_prior_fraud_flags", True)]
+
+        response = self.qdrant.query_points(
+            collection_name=self.collection_name,
+            query=profile_vector(fc.profile),
+            query_filter=query_filter,
+            limit=limit,
+        )
+
+        return [
+            {
+                "case_id": hit.payload.get("case_id"),
+                # Euclidean distance -> (0, 1], higher is more similar
+                "similarity_score": 1.0 / (1.0 + hit.score),
+                "defaulted": bool(hit.payload.get("defaulted")),
+                "metadata": hit.payload,
+                "case_summary": hit.payload.get("text", ""),
+            }
+            for hit in response.points
+        ]
+
+    def portfolio_default_rate(self) -> float:
+        return _portfolio_default_rate(self.collection_name)
+
+
+@lru_cache(maxsize=4)
+def _portfolio_default_rate(collection_name: str) -> float:
+    client = get_qdrant_client()
+    total = client.count(collection_name, exact=True).count
+    defaulted = client.count(collection_name, count_filter=rest.Filter(must=[_match("defaulted", True)]), exact=True).count
+    return defaulted / total if total else 0.0

@@ -56,6 +56,11 @@ class RiskDecisionAgent:
             "4. recommendation must be exactly one of: 'APPROVE_RECOMMENDATION', 'MANUAL_REVIEW', 'DECLINE_RECOMMENDATION'.\n"
             "5. If there is confirmed fraud, recommendation MUST be DECLINE_RECOMMENDATION and risk_level HIGH.\n"
             "6. Provide a clear, concise explanation suitable for a human bank officer.\n"
+            "7. risk_score is on a 0-100 scale, the same scale as the agents' scores.\n"
+            "8. historical_similarities.similar_default_rate is the default rate among the 50 most similar past "
+            "customers; judge it against portfolio_default_rate. similar_cases lists only the closest 5 as examples, "
+            "so do not count defaults in that list.\n"
+            "9. Base the decision on the evidence above; do not raise concerns that no agent reported.\n"
         )
         
         try:

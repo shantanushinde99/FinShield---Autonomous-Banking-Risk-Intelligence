@@ -53,17 +53,19 @@ class FraudAssessment(BaseAssessment):
 class HistoricalCaseItem(BaseModel):
     case_id: str
     similarity_score: float
-    risk_level: str
+    outcome: Literal["DEFAULTED", "REPAID"]  # real loan outcome (Home Credit TARGET)
     case_summary: str
 
 class HistoricalCaseAssessment(BaseAssessment):
     query_summary: str
     similar_cases: List[HistoricalCaseItem] = Field(default_factory=list)
+    similar_default_rate: Optional[float] = None
+    portfolio_default_rate: Optional[float] = None
     common_patterns: List[str] = Field(default_factory=list)
     explanation: str
 
 class RiskAssessment(BaseAssessment):
-    risk_score: float
+    risk_score: float = Field(ge=0, le=100)
     # Literals so an off-spec LLM answer fails validation and hits the deterministic fallback
     risk_level: Literal["LOW", "MEDIUM", "MEDIUM_HIGH", "HIGH"]
     confidence: Literal["LOW", "MEDIUM", "HIGH"]

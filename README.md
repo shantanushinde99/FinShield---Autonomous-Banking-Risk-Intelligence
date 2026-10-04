@@ -29,7 +29,7 @@ Instead of clicking through dashboards, a risk officer simply taps their Omi wea
 Instantly, FinShield springs to life:
 1. **Omi** captures the ambient command and streams it to the backend.
 2. **Lyzr** orchestrates a swarm of specialized, deterministic AI agents (Credit, Transaction, Fraud).
-3. **Qdrant** injects semantic historical memory, instantly retrieving similar past cases.
+3. **Qdrant** recalls the most similar past customers and how often they actually defaulted.
 4. The system synthesizes a final, explainable **Risk Assessment** directly onto a live-updating Web Dashboard, complete with color-coded recommendations and evidence cards.
 
 ---
@@ -41,7 +41,7 @@ Isolated prompts and simple RAG (Retrieval-Augmented Generation) have hit a ceil
 FinShield solves this by decoupling *reasoning* from *data retrieval*:
 - **Specialized DAG Execution**: Instead of asking one LLM to do everything, a Lyzr orchestrator agent (GPT-4o) calls six specialized tools in a fixed order. If the orchestrator skips or aborts a step, the backend finishes the remaining steps itself, so every investigation completes. The Analytical Agents (e.g., Profile, Credit, Transaction, Fraud) ONLY run deterministic SQL against DuckDB; they don't invent math.
 - **Stateful & Observable**: Every agent's execution latency, status, and output is fully observable in real-time on the UI.
-- **Semantic Institutional Memory**: By embedding past case files into Qdrant, the system develops "intuition", warning officers if a seemingly safe customer matches the behavioral profile of a historical default.
+- **Institutional Memory with Real Outcomes**: Past customers are stored in Qdrant with their actual loan outcomes, so the system can warn officers when a seemingly safe customer resembles a population that defaulted at an above-average rate.
 
 ---
 
@@ -51,7 +51,7 @@ FinShield solves this by decoupling *reasoning* from *data retrieval*:
 |:---|:---|
 | 🎙️ **Omi** | **Ambient Voice Capture.** Provides frictionless, hands-free initiation of complex workflows via webhook streaming. |
 | 🤖 **Lyzr** | **Agentic Orchestration.** Manages the DAG pipeline, ensuring agents execute in the correct order and share state. |
-| 🗄️ **Qdrant** | **Semantic Vector Memory.** Stores high-dimensional embeddings of historical fraud cases for rapid similarity matching. |
+| 🗄️ **Qdrant** | **Case Memory.** Stores 50,000 past customers as profile vectors with real loan outcomes for similarity search. |
 | 🧠 **Mistral** | **Cognitive Synthesis.** `mistral-small-latest` turns the agents' raw outputs into a human-readable recommendation. Hard rules (e.g. confirmed fraud ⇒ decline) are enforced in code, and if the LLM fails the decision falls back to the worst deterministic agent verdict with a manual-review flag. |
 | 🦆 **DuckDB** | **Analytical Data Layer.** Executes lightning-fast, parameterized SQL queries on 50,000+ customer records. |
 | ☁️ **Azure Cloud** | **App Service & Blob Storage.** Hosts the production Docker container and streams the DuckDB database securely into memory at runtime to bypass SMB locks. |
@@ -89,7 +89,7 @@ flowchart TD
         A_Fraud[Fraud Agent]:::agent_math
     end
     
-    subgraph cloud_agents ["Cloud API Agents (Embeddings & LLM)"]
+    subgraph cloud_agents ["Cloud API Agents (Vector Search & LLM)"]
         A_Hist[Historical Agent]:::agent_api
         M[Mistral LLM\nFinal Synthesis]:::agent_api
     end
@@ -119,7 +119,7 @@ flowchart TD
     A_Txn -. "Deterministic SQL" .-> DB
     A_Fraud -. "Deterministic SQL" .-> DB
     
-    A_Hist -. "API Call:\nEmbedding & Search" .-> Q
+    A_Hist -. "API Call:\nSimilarity Search" .-> Q
     
     A_Prof & A_Cred & A_Txn & A_Fraud & A_Hist --> M
     M -- "API Call:\nSynthesis to JSON" --> UI
@@ -129,39 +129,33 @@ flowchart TD
 A core philosophy of FinShield is separating **deterministic calculation** from **probabilistic synthesis** to ensure enterprise-grade reliability and avoid LLM hallucination on financial numbers.
 
 - 🟢 **Local Deterministic Agents (No APIs):** The Profile, Credit, Transaction, and Fraud agents **do not** make LLM API calls. They run locally within the Python environment, executing highly optimized, deterministic SQL queries against DuckDB to calculate exact math (e.g., transaction volumes, fraud ratios). This guarantees 100% mathematical accuracy and near-zero latency.
-- 🔴 **Cloud API Agents:** The Historical Agent makes an external API call to embed the current case (via Mistral Embeddings) and searches the Qdrant Cloud cluster. Finally, the Mistral LLM agent makes a single API call at the very end of the pipeline to synthesize the raw math provided by the deterministic agents into a human-readable recommendation.
+- 🔴 **Cloud API Agents:** The Historical Agent searches the Qdrant Cloud cluster for the nearest past customers. Finally, the Mistral LLM agent makes a single API call at the very end of the pipeline to synthesize the raw math provided by the deterministic agents into a human-readable recommendation.
 
-### 🌐 Semantic Memory Pipeline (Mistral + Qdrant)
-Traditional banking systems only check exact keyword matches or hardcoded rules. FinShield uses **Vector Embeddings** to give the AI "intuition" about customer behavior. 
+### 🌐 Institutional Memory Pipeline (Qdrant)
+Every past customer is stored in Qdrant together with their **real loan outcome** (the Home Credit `TARGET` label: defaulted or repaid). An investigation asks a concrete question: *"of the 50 past customers most like this one, how many defaulted, compared with the 8% portfolio average?"*
 
-#### Retrieval Methodology: Top-K with Metadata Pre-Filtering
-FinShield uses a **hybrid vector search strategy**:
-1. **Metadata Pre-Filtering**: Before any math happens, Qdrant applies hard filters (e.g., `has_prior_fraud_flags == True`) to instantly narrow the search space to relevant case types.
-2. **Top-K Dense Retrieval (K=5)**: Using Cosine Similarity on 1024-dimensional Mistral embeddings, the system retrieves the top 5 (Top-K) most mathematically similar historical cases to the current customer's profile.
+#### Retrieval Methodology
+1. **Profile vectors**: each customer is an 11-dimensional vector of z-scored features (age, employment, log income/credit/annuity/debt/overdue, late payments, repayment ratio, bureau score). Distance is Euclidean.
+2. **Filtering**: the customer under investigation is always excluded (`must_not customer_id`). Customers with fraud flags are compared only with other flagged customers.
+3. **Top-K**: the 50 nearest neighbours give the default rate, and the closest 5 are shown as evidence cards.
+
+*Why not text embeddings?* An earlier version embedded case text with Mistral. Because the texts are mostly numbers, every customer came out ~0.90 similar to every other, and all customers got the same top 3 results. A backtest of the current design on 400 customers gives an AUC of **0.667**: the neighbour default rate ranks a real defaulter above a repayer two-thirds of the time. It has 0 self-matches, and 397 different top matches across 400 customers.
 
 #### Pipeline Flow
 ```mermaid
 sequenceDiagram
-    participant Profile as Customer Profile
-    participant Mistral as Mistral Embeddings API
+    participant DB as DuckDB + Home Credit outcomes
     participant Qdrant as Qdrant Vector DB (Cloud)
+    participant Agent as Historical Agent
     participant LLM as Final LLM Synthesis
-    
-    %% Ingestion Phase
-    Note over Mistral,Qdrant: Phase 1: Institutional Memory Ingestion
-    Mistral->>Mistral: Convert 1,000+ historical cases to 1024D vectors
-    Mistral->>Qdrant: Upsert Vectors + Metadata Payloads
-    
-    %% Retrieval Phase
-    Note over Profile,LLM: Phase 2: Live Investigation (Top-K Retrieval)
-    Profile->>Mistral: Embed live customer text profile
-    Mistral-->>Qdrant: Query Vector
-    
-    Qdrant->>Qdrant: 1. Hard Pre-filter (e.g., fraud==true)
-    Qdrant->>Qdrant: 2. Cosine Similarity Match
-    Qdrant-->>LLM: Return Top-K (K=5) similar cases
-    
-    LLM->>LLM: Synthesize historical context into Risk Decision
+
+    Note over DB,Qdrant: Phase 1: Ingestion (scripts/qdrant_ingest.py)
+    DB->>Qdrant: Upsert 50,000 profile vectors + outcome payloads
+
+    Note over Agent,LLM: Phase 2: Live Investigation
+    Agent->>Qdrant: Profile vector, exclude self, fraud filter
+    Qdrant-->>Agent: 50 nearest past customers
+    Agent->>LLM: Neighbour default rate vs portfolio + top 5 cases
 ```
 
 ### 2. Execution Loop: Voice-to-Decision Sequence
@@ -188,8 +182,8 @@ sequenceDiagram
     
     Note over Lyzr: Tools run sequentially in DAG order
     Lyzr->>Lyzr: Profile, Credit, Transaction, Fraud agents (DuckDB data)
-    Lyzr->>Qdrant: Search embedding space for FIN_000001 profile
-    Qdrant-->>Lyzr: Returns top 5 similar historical cases
+    Lyzr->>Qdrant: Search for past customers similar to FIN_000001
+    Qdrant-->>Lyzr: Returns 50 neighbours and their loan outcomes
     
     Lyzr->>LLM: Provide aggregated data + context prompt
     LLM-->>Lyzr: Returns strictly validated Pydantic JSON
@@ -231,11 +225,12 @@ FinShield runs on a prebuilt DuckDB database (`finshield/database/finshield.duck
 
 Then seed Qdrant and sanity-check the data:
 ```bash
-# 1. Embed historical cases and upsert them into Qdrant semantic memory
-python scripts/qdrant_ingest.py
+# 1. Load all past customers + real outcomes into Qdrant (~35s, no API calls)
+#    Reads finshield/data/raw/home_credit/application_train.csv for the TARGET labels
+PYTHONPATH=. python scripts/qdrant_ingest.py
 
 # 2. (Optional) Print row counts, schemas and samples of every DuckDB table
-python scripts/profile_data.py
+PYTHONPATH=. python scripts/profile_data.py
 ```
 
 ### 5. Utility & Debug Scripts
@@ -243,8 +238,8 @@ FinShield includes several utility scripts in the `scripts/` folder for testing 
 - **`run_api.py`**: The main entry point to start the FastAPI server programmatically (used by `start.bat`). Auto-reload is on unless `APP_ENV=production`.
 - **`profile_data.py`**: Prints row counts, schemas and sample rows for every DuckDB table.
 - **`validation.py`**: Builds and prints the investigation context for `FIN_000001`, verifying the DuckDB data and Pydantic models.
-- **`qdrant_check.py`**: Pings your Qdrant instance to verify connection and prints collection stats.
-- **`qdrant_search.py`**: Allows you to run a manual semantic search query directly against Qdrant without using the UI.
+- **`qdrant_check.py`**: Verifies the Qdrant connection and prints the collection's point count, vector config and indexes.
+- **`qdrant_search.py --customer-id FIN_000001`**: Shows a customer's nearest past customers and their outcomes without using the UI.
 - **`phase[X]_demo.py`**: Isolated scripts used to test specific subsets of the agentic workflow during development.
 
 ### 6. Start the Application
