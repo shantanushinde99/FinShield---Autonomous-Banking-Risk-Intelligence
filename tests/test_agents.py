@@ -96,3 +96,25 @@ def test_fraud_agent_confirmed(base_context):
     assert result.risk_level == "HIGH"
     assert result.confirmed_fraud_count == 2
     assert result.fraud_risk_score == 100.0
+
+def test_credit_agent_high_debt_burden(base_context):
+    # income / exposure = 0.1 -> debt is 10x income
+    base_context.financial_context.income_to_debt_ratio = 0.1
+    result = CreditRiskAgent().analyze(base_context)
+    assert result.risk_level == "MEDIUM"
+    assert any("High debt burden" in f for f in result.key_factors)
+
+def test_context_income_to_debt_ratio_direction():
+    from unittest.mock import patch
+    from finshield.models.domain import Customer
+    from finshield.services.investigation import InvestigationContextService
+    profile = CustomerProfile(finshield_customer_id="C-1", total_income=100000,
+                              credit_amount=400000, bureau_total_outstanding_debt=100000)
+    with patch("finshield.services.investigation.CustomerRepository") as repo, \
+         patch("finshield.services.investigation.CaseRepository") as cases:
+        repo.get_customer.return_value = Customer(finshield_customer_id="C-1", synthetic_dataset_mapping=True)
+        repo.get_customer_profile.return_value = profile
+        cases.get_customer_cases.return_value = []
+        fc = InvestigationContextService.build_context("C-1").financial_context
+    # income 100k vs exposure 500k: high leverage must be a SMALL ratio
+    assert fc.income_to_debt_ratio == 0.2

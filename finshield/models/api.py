@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Optional, Any, Dict
-from datetime import datetime
+from datetime import datetime, timezone
 
 class ErrorDetails(BaseModel):
     code: str
@@ -14,4 +14,4 @@ class APIError(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     dependencies: Optional[Dict[str, str]] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

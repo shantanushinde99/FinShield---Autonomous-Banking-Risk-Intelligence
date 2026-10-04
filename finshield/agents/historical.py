@@ -10,17 +10,14 @@ class HistoricalCaseRetrievalAgent:
     Wraps the Phase 3 Qdrant Retrieval Service to format semantic historical similarities into evidence.
     """
     
-    def __init__(self):
-        # We instantiate the service once per agent, which handles Qdrant connectivity.
-        self.memory_service = FinancialMemoryService()
-        
     def analyze(self, context: InvestigationContext) -> HistoricalCaseAssessment:
         similar_cases = []
         explanation = "Semantic retrieval complete."
         
         try:
             # Query top 5 similar cases based on the customer's financial profile
-            results = self.memory_service.search_similar_cases_for_customer(context, limit=5)
+            # Inside the try so missing Qdrant/Mistral config degrades to an empty result
+            results = FinancialMemoryService().search_similar_cases_for_customer(context, limit=5)
             
             for res in results:
                 similar_cases.append(HistoricalCaseItem(

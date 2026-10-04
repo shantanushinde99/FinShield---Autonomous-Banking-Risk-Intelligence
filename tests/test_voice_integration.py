@@ -72,3 +72,25 @@ async def test_duplicate_completed_protection(mock_workflow_service):
     
     # Should return the cached response
     assert response == mock_response
+
+def test_extract_customer_id_homophones():
+    # "for"/"to" are words here, not digits
+    assert VoiceCommandParser.extract_customer_id("investigate customer one for fraud") == "FIN_000001"
+    assert VoiceCommandParser.extract_customer_id("check risk profile for customer two zero four four two") == "FIN_020442"
+    # ...but digits when another digit follows (STT mishearing "four")
+    assert VoiceCommandParser.extract_customer_id("customer two zero for four two") == "FIN_020442"
+
+def test_extract_customer_id_keyword_boundaries():
+    assert VoiceCommandParser.extract_customer_id("the fluid 3 litres") is None
+    assert VoiceCommandParser.extract_customer_id("identity 5") is None
+
+def test_extract_customer_id_prefers_latest_mention():
+    text = "we discussed customer 5 yesterday, now investigate customer 7"
+    assert VoiceCommandParser.extract_customer_id(text) == "FIN_000007"
+
+@patch("finshield.services.voice.InvestigationWorkflowService")
+def test_transcript_buffer_is_capped(mock_workflow_service):
+    service = VoiceInvestigationService()
+    for _ in range(100):
+        buf = service.accumulate_transcript("s1", "some ambient chatter here")
+    assert len(buf.split()) == VoiceInvestigationService.BUFFER_MAX_WORDS

@@ -1,6 +1,6 @@
 import httpx
 import logging
-from typing import Dict, Any, Type
+from typing import Type
 from pydantic import BaseModel
 import json
 from finshield.config.settings import settings
@@ -20,7 +20,7 @@ class MistralLLMService:
         
         self.api_key = settings.mistral_api_key
         self.api_url = "https://api.mistral.ai/v1/chat/completions"
-        self.model = "open-mistral-7b"
+        self.model = "ministral-8b-latest"  # open-mistral-7b is retired; mistral-small has 0 req/min on this tier
 
     @staticmethod
     def _is_valid_for_schema(data: dict, schema_class: Type[BaseModel]) -> bool:
@@ -64,34 +64,30 @@ class MistralLLMService:
             with httpx.Client(timeout=60.0) as client:
                 response = client.post(self.api_url, headers=headers, json=payload)
                 response.raise_for_status()
-                data = response.json()
-                
-                content = data["choices"][0]["message"]["content"]
-                
-                # Parse JSON and validate against Pydantic schema
-                try:
-                    parsed_json = json.loads(content)
-                    
-                    # LLMs sometimes wrap the response in extra nesting, e.g.:
-                    # {"$schema": "...", "RiskAssessment": {...actual fields...}}
-                    # or {"risk_assessment": {...}}
-                    # We need to unwrap it to get the actual fields.
-                    if not self._is_valid_for_schema(parsed_json, schema_class):
-                        # Try to find the actual data nested under a key
-                        for key, value in parsed_json.items():
-                            if isinstance(value, dict) and self._is_valid_for_schema(value, schema_class):
-                                logger.info(f"Unwrapped LLM response from nested key '{key}'")
-                                parsed_json = value
-                                break
-                    
-                    return schema_class(**parsed_json)
-                except Exception as e:
-                    logger.error(f"Failed to parse or validate LLM JSON response: {content}")
-                    raise LLMServiceError(f"LLM produced invalid structured output: {e}")
-                    
+                content = response.json()["choices"][0]["message"]["content"]
         except httpx.HTTPStatusError as e:
             logger.error(f"Mistral API error: {e.response.text}")
             raise LLMServiceError(f"Mistral API returned status {e.response.status_code}") from e
         except Exception as e:
             logger.error(f"LLM Service failure: {e}")
             raise LLMServiceError(f"Failed to communicate with LLM: {e}") from e
+
+        # Parse JSON and validate against Pydantic schema
+        try:
+            parsed_json = json.loads(content)
+
+            # LLMs sometimes wrap the response in extra nesting, e.g.:
+            # {"$schema": "...", "RiskAssessment": {...actual fields...}}
+            # or {"risk_assessment": {...}}
+            # We need to unwrap it to get the actual fields.
+            if not self._is_valid_for_schema(parsed_json, schema_class):
+                for key, value in parsed_json.items():
+                    if isinstance(value, dict) and self._is_valid_for_schema(value, schema_class):
+                        logger.info(f"Unwrapped LLM response from nested key '{key}'")
+                        parsed_json = value
+                        break
+
+            return schema_class(**parsed_json)
+        except Exception as e:
+            logger.error(f"Failed to parse or validate LLM JSON response: {content}")
+            raise LLMServiceError(f"LLM produced invalid structured output: {e}") from e

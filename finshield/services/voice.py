@@ -1,4 +1,5 @@
 import re
+import asyncio
 import logging
 from typing import Dict, Optional, Tuple
 
@@ -18,22 +19,21 @@ class VoiceCommandParser:
     
     # Word-to-digit mapping for STT that transcribes numbers as words
     WORD_TO_DIGIT = {
-        "zero": "0", "oh": "0", "o": "0",
-        "one": "1", "won": "1",
-        "two": "2", "to": "2", "too": "2",
-        "three": "3", "tree": "3",
-        "four": "4", "for": "4",
-        "five": "5",
-        "six": "6", "sicks": "6",
-        "seven": "7",
-        "eight": "8", "ate": "8",
-        "nine": "9", "niner": "9",
+        "zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
+        "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9", "niner": "9",
     }
-    
+    # Homophones that are also common English words ("for", "to"...): only treated as
+    # digits when another digit follows, so "customer one for fraud" stays FIN_000001.
+    HOMOPHONE_TO_DIGIT = {
+        "oh": "0", "o": "0", "won": "1", "to": "2", "too": "2",
+        "tree": "3", "for": "4", "sicks": "6", "ate": "8",
+    }
+
     # Matches variations: "FIN 1", "Finn 5", "FIN 384425", "fin_000001"
-    # Accepts even a single digit — _normalize_digits will zero-pad to 6
-    CUSTOMER_ID_REGEX = re.compile(r'(?:finn?|customer|id|number)[-_\s:]*(\d[\d\s]*)', re.IGNORECASE)
-    
+    # Accepts even a single digit — _normalize_digits will zero-pad to 6.
+    # Keyword must start a word and not run into letters ("fluid 3", "identity 5" don't match).
+    CUSTOMER_ID_REGEX = re.compile(r'\b(?:finn?|customer|id|number)(?![a-z])[-_\s:]*(\d[\d\s]*)', re.IGNORECASE)
+
     # Matches keywords for risk investigation
     INVESTIGATE_KEYWORDS = ["investigate", "investigation", "check", "risk profile", "fraud risk"]
 
@@ -42,21 +42,24 @@ class VoiceCommandParser:
         """Convert spoken number words to digit characters.
         'three eight four four two six' → '3 8 4 4 2 6'
         """
-        words = text.split()
         result = []
-        for word in words:
+        # Right-to-left so a homophone can see whether a digit follows it
+        for word in reversed(text.split()):
             clean = word.strip(".,!?").lower()
+            next_is_digit = bool(result) and result[-1].isdigit()
             if clean in cls.WORD_TO_DIGIT:
                 result.append(cls.WORD_TO_DIGIT[clean])
+            elif clean in cls.HOMOPHONE_TO_DIGIT and next_is_digit:
+                result.append(cls.HOMOPHONE_TO_DIGIT[clean])
             else:
                 result.append(word)
-        return " ".join(result)
+        return " ".join(reversed(result))
 
     @classmethod
     def _normalize_digits(cls, raw_digits: str) -> Optional[str]:
         """Remove spaces/dashes from digit groups and pad to 6 digits"""
         digits_only = re.sub(r'\D', '', raw_digits)
-        if len(digits_only) < 1 or len(digits_only) > 6:
+        if len(digits_only) < 1 or len(digits_only) > 6 or int(digits_only) == 0:
             return None
         # Pad to 6 digits
         return digits_only.zfill(6)
@@ -67,9 +70,10 @@ class VoiceCommandParser:
         converted_text = cls._words_to_digits(text)
         logger.info(f"After word-to-digit conversion: '{converted_text}'")
         
-        match = cls.CUSTOMER_ID_REGEX.search(converted_text)
-        if match:
-            normalized = cls._normalize_digits(match.group(1))
+        # The session buffer accumulates speech, so the most recent mention wins
+        matches = cls.CUSTOMER_ID_REGEX.findall(converted_text)
+        if matches:
+            normalized = cls._normalize_digits(matches[-1])
             if normalized:
                 logger.info(f"Extracted customer ID: FIN_{normalized}")
                 return f"FIN_{normalized}"
@@ -104,7 +108,8 @@ class VoiceCommandParser:
 
 class VoiceInvestigationService:
     """Manages voice sessions and orchestrates voice-driven investigations"""
-    
+    BUFFER_MAX_WORDS = 40
+
     def __init__(self):
         # In-memory session store
         self._sessions: Dict[str, VoiceSession] = {}
@@ -126,9 +131,9 @@ class VoiceInvestigationService:
 
     def accumulate_transcript(self, session_id: str, text: str) -> str:
         """Accumulate transcript segments for a session and return full buffer"""
-        if session_id not in self._transcript_buffer:
-            self._transcript_buffer[session_id] = ""
-        self._transcript_buffer[session_id] = (self._transcript_buffer[session_id] + " " + text).strip()
+        words = (self._transcript_buffer.get(session_id, "") + " " + text).split()
+        # Omi streams ambient speech all day; a command fits in the last few seconds of it
+        self._transcript_buffer[session_id] = " ".join(words[-self.BUFFER_MAX_WORDS:])
         return self._transcript_buffer[session_id]
 
     def clear_buffer(self, session_id: str):
@@ -182,9 +187,8 @@ class VoiceInvestigationService:
         self.clear_buffer(transcript.session_id)
         session.state = VoiceSessionState.INVESTIGATING
         session.customer_id = request.customer_id
+        session.investigation_id = None
         session.last_transcript = accumulated_text
-        
-        import asyncio
         
         # Execute investigation in a separate thread because Phase 5 internally 
         # uses asyncio.run() which would crash if run in the main event loop
@@ -193,6 +197,7 @@ class VoiceInvestigationService:
             final_state = await asyncio.to_thread(self.workflow_service.run_investigation, request.customer_id)
             
             session.investigation_id = final_state.investigation_id
+            session.last_state = final_state
             
             if final_state.final_decision:
                 decision = final_state.final_decision

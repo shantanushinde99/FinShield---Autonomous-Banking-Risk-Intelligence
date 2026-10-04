@@ -12,7 +12,8 @@ from finshield.orchestration.lyzr_workflow import (
     _analyze_fraud,
     _retrieve_historical_cases,
     _synthesize_risk_decision,
-    FinShieldOrchestrator
+    FinShieldOrchestrator,
+    DAG_STEPS,
 )
 
 @pytest.fixture
@@ -73,14 +74,34 @@ def test_run_investigation_workflow(mock_asyncio, mock_studio, mock_investigatio
     orchestrator = FinShieldOrchestrator()
     orchestrator.studio = mock_studio.return_value
     
-    final_state = orchestrator.run_investigation_workflow(mock_investigation_state)
+    steps = [(attr, MagicMock()) for attr, _ in DAG_STEPS]
+    with patch("finshield.orchestration.lyzr_workflow.DAG_STEPS", steps):
+        final_state = orchestrator.run_investigation_workflow(mock_investigation_state)
     
     # Verify that the agent was created with the correct instructions
     mock_studio.return_value.agents.create.assert_called_once()
     # add_tool is called once per tool (6 times)
     assert mock_agent.add_tool.call_count == 6
     mock_asyncio.run.assert_called_once()
+    # The per-run Studio agent is cleaned up
+    mock_studio.return_value.agents.delete.assert_called_once_with(mock_agent.id)
+    # Mocked orchestrator filled nothing, so every step is completed deterministically, in order
+    for _, step in steps:
+        step.assert_called_once_with("TEST-INV-001")
+    assert "TEST-INV-001" not in _ACTIVE_STATES
     
     # State should still be accessible
     assert final_state.investigation_id == "TEST-INV-001"
 
+@patch("lyzr.Studio")
+def test_orchestrator_failure_still_completes_dag(mock_studio, mock_investigation_state):
+    mock_studio.return_value.agents.create.side_effect = RuntimeError("Lyzr down")
+    orchestrator = FinShieldOrchestrator()
+
+    steps = [(attr, MagicMock()) for attr, _ in DAG_STEPS]
+    with patch("finshield.orchestration.lyzr_workflow.DAG_STEPS", steps):
+        orchestrator.run_investigation_workflow(mock_investigation_state)
+
+    for _, step in steps:
+        step.assert_called_once()
+    mock_studio.return_value.agents.delete.assert_not_called()

@@ -48,13 +48,24 @@ def main():
             except:
                 ftp.mkd("/data")
                 ftp.cwd("/data")
-            
+
             print("Uploading finshield.duckdb (This may take 5-15 minutes depending on your internet upload speed)...")
+
+            file_size_bytes = os.path.getsize(db_path)
+            uploaded_bytes = 0
+
+            def handle_block(block):
+                nonlocal uploaded_bytes
+                uploaded_bytes += len(block)
+                percent = (uploaded_bytes / file_size_bytes) * 100
+                sys.stdout.write(f"\rUpload Progress: {percent:.1f}%  ({uploaded_bytes // (1024*1024)} MB / {file_size_bytes // (1024*1024)} MB)")
+                sys.stdout.flush()
+
             with open(db_path, "rb") as f:
-                # Use a block size of 8192 for efficient uploading
-                ftp.storbinary("STOR finshield.duckdb", f, blocksize=8192)
+                # Use a block size of 8192 for efficient uploading and pass our progress callback
+                ftp.storbinary("STOR finshield.duckdb", f, blocksize=8192, callback=handle_block)
                 
-        print("\n✅ UPLOAD COMPLETE! The database is now safely on Azure!")
+        print("\n\n✅ UPLOAD COMPLETE! The database is now safely on Azure!")
         print("Go to your Azure Configuration, ensure DUCKDB_PATH is set to '/home/data/finshield.duckdb', and you're done!")
         
     except Exception as e:

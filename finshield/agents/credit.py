@@ -5,7 +5,11 @@ class CreditRiskAgent:
     """
     Deterministically evaluates credit risk based on debt metrics and repayment history.
     """
-    
+    # income / (bureau debt + requested credit). On the current dataset ~71% of
+    # customers fall below 0.3 and ~0.2% above 2.0 — tune here if that's too noisy.
+    HIGH_DEBT_BURDEN_RATIO = 0.3
+    STRONG_COVERAGE_RATIO = 2.0
+
     def analyze(self, context: InvestigationContext) -> CreditRiskAssessment:
         fc = context.financial_context
         profile = fc.profile
@@ -58,12 +62,13 @@ class CreditRiskAgent:
         # Income to Debt Ratio
         if fc.income_to_debt_ratio is not None:
             ratio = fc.income_to_debt_ratio
-            if ratio < 0.3 and metrics["outstanding_debt"] > 0:
+            metrics["income_to_debt_ratio"] = ratio
+            if ratio < self.HIGH_DEBT_BURDEN_RATIO and metrics["outstanding_debt"] > 0:
                 key_factors.append(f"High debt burden relative to income (Ratio: {ratio:.2f})")
                 score += 20.0
                 if risk_level == "LOW":
                     risk_level = "MEDIUM"
-            elif ratio > 2.0:
+            elif ratio > self.STRONG_COVERAGE_RATIO:
                 positive_factors.append(f"Strong income to debt coverage (Ratio: {ratio:.2f})")
                 
         # Existing credit risk score mapping (if any)

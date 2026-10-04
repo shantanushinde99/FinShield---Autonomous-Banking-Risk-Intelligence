@@ -12,13 +12,12 @@ from finshield.services.llm import MistralLLMService
 
 logger = logging.getLogger(__name__)
 
+RISK_LEVELS = ["LOW", "MEDIUM", "MEDIUM_HIGH", "HIGH"]
+
 class RiskDecisionAgent:
     """
     Synthesizes evidence from specialized agents using Mistral LLM to form a final risk decision.
     """
-    def __init__(self):
-        self.llm_service = MistralLLMService()
-        
     def analyze(self, 
                 context: InvestigationContext,
                 profile: CustomerProfileAssessment,
@@ -27,6 +26,10 @@ class RiskDecisionAgent:
                 fraud: FraudAssessment,
                 historical: HistoricalCaseAssessment) -> RiskAssessment:
                 
+        fc_profile = context.financial_context.profile
+        # Home Credit's AMT_CREDIT is the credit amount of the loan applied for
+        loan_amount = fc_profile.credit_amount if fc_profile else None
+
         # 1. Compile all structured evidence into a JSON prompt context
         evidence_context = {
             "investigation_id": context.investigation_id,
@@ -36,7 +39,7 @@ class RiskDecisionAgent:
             "transaction_risk": transaction.model_dump(),
             "fraud_indicators": fraud.model_dump(),
             "historical_similarities": historical.model_dump(),
-            "requested_loan_amount": 100000.0 # Placeholder or derived from application context
+            "requested_loan_amount": loan_amount
         }
         
         prompt = (
@@ -57,22 +60,34 @@ class RiskDecisionAgent:
         
         try:
             logger.info("Calling Mistral LLM to synthesize final risk decision...")
-            result = self.llm_service.generate_structured_response(prompt, RiskAssessment)
-            
-            # Ensure identifiers are consistent with the context
-            result.investigation_id = context.investigation_id
-            result.customer_id = context.financial_context.customer_id
-            
-            return result
+            # Constructed here so a missing API key degrades to the fallback below
+            result = MistralLLMService().generate_structured_response(prompt, RiskAssessment)
         except Exception as e:
             logger.error(f"LLM synthesis failed: {e}")
-            # Fallback deterministic response in case of LLM failure
-            return RiskAssessment(
+            # Fallback: worst of the deterministic agent verdicts, routed to a human
+            scored = [
+                (credit.credit_risk_score, credit.risk_level),
+                (transaction.transaction_risk_score, transaction.risk_level),
+                (fraud.fraud_risk_score, fraud.risk_level),
+            ]
+            result = RiskAssessment(
                 investigation_id=context.investigation_id,
                 customer_id=context.financial_context.customer_id,
-                risk_score=99.0,
-                risk_level="HIGH",
+                risk_score=max(score for score, _ in scored),
+                risk_level=max((level for _, level in scored), key=RISK_LEVELS.index),
                 confidence="LOW",
                 recommendation="MANUAL_REVIEW",
-                explanation=f"LLM Synthesis failed. Falling back to manual review. Error: {str(e)}"
+                explanation="Automated synthesis was unavailable, so this combines the rule-based agent results. Manual review required."
             )
+
+        # Ensure identifiers are consistent with the context
+        result.investigation_id = context.investigation_id
+        result.customer_id = context.financial_context.customer_id
+        result.requested_loan_amount = loan_amount
+
+        # Hard compliance rule: enforced in code, not left to the LLM
+        if fraud.confirmed_fraud_count > 0:
+            result.risk_level = "HIGH"
+            result.recommendation = "DECLINE_RECOMMENDATION"
+
+        return result

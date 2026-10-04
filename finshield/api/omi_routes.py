@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 import logging
 import json
 
 from finshield.models.voice import VoiceTranscript, VoiceResponse
 from finshield.services.voice import VoiceInvestigationService
+from finshield.models.workflow import InvestigationState
 
 logger = logging.getLogger(__name__)
 
@@ -93,5 +94,14 @@ async def get_omi_status():
         "status": session.state,
         "transcript": session.last_transcript or "",
         "spoken_summary": session.last_response.spoken_summary if session.last_response else "",
-        "customer_id": session.customer_id
+        "customer_id": session.customer_id,
+        "investigation_id": session.investigation_id,
     }
+
+@router.get("/omi/result", response_model=InvestigationState)
+async def get_omi_result():
+    """Full result of the latest voice-triggered investigation, so the UI doesn't re-run it"""
+    session = voice_service.get_latest_session()
+    if not session or not session.last_state:
+        raise HTTPException(status_code=404, detail="No voice investigation result yet")
+    return session.last_state

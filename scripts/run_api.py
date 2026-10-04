@@ -12,7 +12,9 @@ load_dotenv()
 def main():
     print("Starting FinShield API Server...")
     
-    uvicorn.run("finshield.api.main:app", host="0.0.0.0", port=8000, reload=True)
+    # Auto-reload is a dev convenience; it doubles processes and watches files in production
+    reload = os.environ.get("APP_ENV", "development") != "production"
+    uvicorn.run("finshield.api.main:app", host="0.0.0.0", port=8000, reload=reload)
 
 if __name__ == "__main__":
     main()

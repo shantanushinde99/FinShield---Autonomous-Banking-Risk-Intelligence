@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional, Any, Dict
-from datetime import datetime
+from typing import List, Optional, Any, Dict, Literal
+from datetime import datetime, timezone
 
 class Evidence(BaseModel):
     source_type: str  # e.g., "duckdb", "qdrant", "derived"
@@ -12,7 +12,7 @@ class Evidence(BaseModel):
 class BaseAssessment(BaseModel):
     investigation_id: str
     customer_id: str
-    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class CustomerProfileAssessment(BaseAssessment):
     age: Optional[float] = None
@@ -64,12 +64,13 @@ class HistoricalCaseAssessment(BaseAssessment):
 
 class RiskAssessment(BaseAssessment):
     risk_score: float
-    risk_level: str  # LOW, MEDIUM, MEDIUM_HIGH, HIGH
-    confidence: str  # LOW, MEDIUM, HIGH (heuristic based)
+    # Literals so an off-spec LLM answer fails validation and hits the deterministic fallback
+    risk_level: Literal["LOW", "MEDIUM", "MEDIUM_HIGH", "HIGH"]
+    confidence: Literal["LOW", "MEDIUM", "HIGH"]
     requested_loan_amount: Optional[float] = None
     risk_factors: List[str] = Field(default_factory=list)
     positive_factors: List[str] = Field(default_factory=list)
     evidence: List[Evidence] = Field(default_factory=list)
     similar_cases: List[str] = Field(default_factory=list)
-    recommendation: str  # APPROVE_RECOMMENDATION, MANUAL_REVIEW, DECLINE_RECOMMENDATION
+    recommendation: Literal["APPROVE_RECOMMENDATION", "MANUAL_REVIEW", "DECLINE_RECOMMENDATION"]
     explanation: Any

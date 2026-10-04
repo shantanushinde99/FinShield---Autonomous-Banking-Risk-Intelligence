@@ -169,6 +169,16 @@ synthesize_risk_decision = Tool(
     function=_synthesize_risk_decision
 )
 
+# State attribute each step populates, in DAG order
+DAG_STEPS = [
+    ("profile", _analyze_profile),
+    ("credit", _analyze_credit),
+    ("transactions", _analyze_transactions),
+    ("fraud", _analyze_fraud),
+    ("historical", _retrieve_historical_cases),
+    ("final_decision", _synthesize_risk_decision),
+]
+
 class FinShieldOrchestrator:
     """
     Manages the multi-agent orchestration layer using Lyzr ADK.
@@ -204,6 +214,7 @@ class FinShieldOrchestrator:
             "If any tool fails, STOP the investigation and report the failure.\n"
         )
         
+        agent = None
         try:
             agent = self.studio.agents.create(
                 name="FinShield_Orchestrator",
@@ -224,9 +235,21 @@ class FinShieldOrchestrator:
             
         except Exception as e:
             logger.error(f"Orchestrator workflow failed: {e}")
+
+        try:
+            # The DAG is fixed, so if the LLM orchestrator skipped or aborted steps,
+            # finish them deterministically rather than returning a half-done investigation.
+            for attr, step in DAG_STEPS:
+                if getattr(state, attr) is None:
+                    logger.warning(f"Orchestrator did not complete '{attr}', running it directly")
+                    step(state.investigation_id)
         finally:
-            # Clean up the state registry
-            if state.investigation_id in _ACTIVE_STATES:
-                del _ACTIVE_STATES[state.investigation_id]
-                
+            _ACTIVE_STATES.pop(state.investigation_id, None)
+            if agent is not None:
+                # agents.create persists a Studio agent per run; don't leak them
+                try:
+                    self.studio.agents.delete(agent.id)
+                except Exception as e:
+                    logger.warning(f"Failed to delete Lyzr agent {agent.id}: {e}")
+
         return state

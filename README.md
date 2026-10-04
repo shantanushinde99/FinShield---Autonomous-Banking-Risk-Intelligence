@@ -39,7 +39,7 @@ Instantly, FinShield springs to life:
 Isolated prompts and simple RAG (Retrieval-Augmented Generation) have hit a ceiling. Financial compliance demands **deterministic execution** and **explainability**. 
 
 FinShield solves this by decoupling *reasoning* from *data retrieval*:
-- **Specialized DAG Execution**: Instead of asking one LLM to do everything, FinShield uses a Lyzr Directed Acyclic Graph (DAG) to launch specialized sub-agents. The Analytical Agents (e.g., Profile, Credit, Transaction, Fraud) ONLY run deterministic SQL against DuckDB; they don't invent math.
+- **Specialized DAG Execution**: Instead of asking one LLM to do everything, a Lyzr orchestrator agent (GPT-4o) calls six specialized tools in a fixed order. If the orchestrator skips or aborts a step, the backend finishes the remaining steps itself, so every investigation completes. The Analytical Agents (e.g., Profile, Credit, Transaction, Fraud) ONLY run deterministic SQL against DuckDB; they don't invent math.
 - **Stateful & Observable**: Every agent's execution latency, status, and output is fully observable in real-time on the UI.
 - **Semantic Institutional Memory**: By embedding past case files into Qdrant, the system develops "intuition", warning officers if a seemingly safe customer matches the behavioral profile of a historical default.
 
@@ -52,7 +52,7 @@ FinShield solves this by decoupling *reasoning* from *data retrieval*:
 | 🎙️ **Omi** | **Ambient Voice Capture.** Provides frictionless, hands-free initiation of complex workflows via webhook streaming. |
 | 🤖 **Lyzr** | **Agentic Orchestration.** Manages the DAG pipeline, ensuring agents execute in the correct order and share state. |
 | 🗄️ **Qdrant** | **Semantic Vector Memory.** Stores high-dimensional embeddings of historical fraud cases for rapid similarity matching. |
-| 🧠 **Mistral / GPT-4** | **Cognitive Synthesis.** Analyzes the raw data outputs from all agents to formulate a human-readable recommendation. |
+| 🧠 **Mistral** | **Cognitive Synthesis.** `mistral-small-latest` turns the agents' raw outputs into a human-readable recommendation. Hard rules (e.g. confirmed fraud ⇒ decline) are enforced in code, and if the LLM fails the decision falls back to the worst deterministic agent verdict with a manual-review flag. |
 | 🦆 **DuckDB** | **Analytical Data Layer.** Executes lightning-fast, parameterized SQL queries on 50,000+ customer records. |
 | ☁️ **Azure Cloud** | **App Service & Blob Storage.** Hosts the production Docker container and streams the DuckDB database securely into memory at runtime to bypass SMB locks. |
 | ⚡ **FastAPI & Vanilla JS** | **Backend & Live UI.** Provides API hardening, asynchronous state polling, and a completely framework-less, lightning-fast frontend. |
@@ -186,12 +186,10 @@ sequenceDiagram
     
     API->>Lyzr: Run Investigation Workflow
     
-    par Analytical Agents
-        Lyzr->>Lyzr: Fetch DuckDB Profile, Credit, Txn data
-    and Semantic Agent
-        Lyzr->>Qdrant: Search embedding space for FIN_000001 profile
-        Qdrant-->>Lyzr: Returns top 3 similar historical cases
-    end
+    Note over Lyzr: Tools run sequentially in DAG order
+    Lyzr->>Lyzr: Profile, Credit, Transaction, Fraud agents (DuckDB data)
+    Lyzr->>Qdrant: Search embedding space for FIN_000001 profile
+    Qdrant-->>Lyzr: Returns top 5 similar historical cases
     
     Lyzr->>LLM: Provide aggregated data + context prompt
     LLM-->>Lyzr: Returns strictly validated Pydantic JSON
@@ -229,21 +227,22 @@ cp .env.example .env
 Fill in your API keys (`LYZR_API_KEY`, `MISTRAL_API_KEY`, and `QDRANT_API_KEY`).
 
 ### 4. Data Initialization (Required on first run)
-Because FinShield operates on 50,000+ real customer records, the raw datasets are excluded from Git to save space. You must generate the local `finshield.duckdb` database, the optimized `.parquet` files, and seed the Qdrant vector database.
+FinShield runs on a prebuilt DuckDB database (`finshield/database/finshield.duckdb`, ~800 MB, 50,000 customers) derived from the Home Credit and PaySim datasets. The database and data files are excluded from Git, and **the repo does not contain the script that builds the database from the raw CSVs**, so obtain a copy of `finshield.duckdb` and place it at the path above.
 
-Run the data pipelines in this exact order:
+Then seed Qdrant and sanity-check the data:
 ```bash
-# 1. Transform raw CSVs into highly-compressed Parquet files & seed DuckDB
-python scripts/profile_data.py
-
-# 2. Extract historical cases and inject them into Qdrant semantic memory
+# 1. Embed historical cases and upsert them into Qdrant semantic memory
 python scripts/qdrant_ingest.py
+
+# 2. (Optional) Print row counts, schemas and samples of every DuckDB table
+python scripts/profile_data.py
 ```
 
 ### 5. Utility & Debug Scripts
 FinShield includes several utility scripts in the `scripts/` folder for testing and validation:
-- **`run_api.py`**: The main entry point to start the FastAPI server programmatically (used by `start.bat`).
-- **`validation.py`**: Verifies that your `.env` variables and Pydantic models are correctly configured.
+- **`run_api.py`**: The main entry point to start the FastAPI server programmatically (used by `start.bat`). Auto-reload is on unless `APP_ENV=production`.
+- **`profile_data.py`**: Prints row counts, schemas and sample rows for every DuckDB table.
+- **`validation.py`**: Builds and prints the investigation context for `FIN_000001`, verifying the DuckDB data and Pydantic models.
 - **`qdrant_check.py`**: Pings your Qdrant instance to verify connection and prints collection stats.
 - **`qdrant_search.py`**: Allows you to run a manual semantic search query directly against Qdrant without using the UI.
 - **`phase[X]_demo.py`**: Isolated scripts used to test specific subsets of the agentic workflow during development.
@@ -265,14 +264,14 @@ start.bat
 ## 🎙️ Testing the Live Demo
 
 1. Open the **FinShield dashboard** at `http://localhost:8000`.
-2. Ensure the "System: Healthy" and "Omi: Ready" indicators are glowing green.
+2. Ensure the "System: Healthy" indicator is green. "Degraded" means `/health/dependencies` found DuckDB or Qdrant unreachable, or an API key missing.
 3. Speak clearly into your Omi device:
    > **"Investigate customer one"** 
    > *(System parses -> FIN_000001)*
    
    > **"Check risk profile for customer two zero four four two"** 
    > *(System parses -> FIN_020442)*
-4. **Observe:** The UI will immediately catch the transcript, the Lyzr Trace will light up as agents execute in real-time, and the final LLM decision will render interactively.
+4. **Observe:** The UI picks up the transcript, shows the trace as running, and renders the result of the voice-triggered investigation once it completes.
 
 ---
 
@@ -281,9 +280,9 @@ start.bat
 FinShield includes a robust Pytest suite verifying memory insertion, orchestration logic, voice transcription fallbacks, and API boundary validation.
 
 ```bash
-# Run all tests (29/29 Passing)
 pytest tests/ -v
 ```
+`test_data_layer.py` reads the real `finshield.duckdb`; all other tests mock external services.
 
 ---
 

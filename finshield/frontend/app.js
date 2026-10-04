@@ -12,7 +12,13 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 });
 
+// Everything rendered via innerHTML goes through esc(): transcripts arrive from the
+// public Omi webhook and explanations from the LLM, so neither is trusted markup.
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+
 let voicePollingInterval;
+let voiceInProgress = false;
+let voiceInvestigationShown = null;
 async function startVoicePolling() {
     voicePollingInterval = setInterval(async () => {
         try {
@@ -38,19 +44,39 @@ function updateVoiceUI(data) {
     }
     
     if (data.transcript) {
-        transcriptEl.innerHTML = `<p>"${data.transcript}"</p>`;
+        transcriptEl.innerHTML = `<p>"${esc(data.transcript)}"</p>`;
     }
     
     if (data.spoken_summary) {
-        transcriptEl.innerHTML += `<p class="placeholder-text mt-2">Omi says: "${data.spoken_summary}"</p>`;
+        transcriptEl.innerHTML += `<p class="placeholder-text mt-2">Omi says: "${esc(data.spoken_summary)}"</p>`;
     }
     
-    // If voice triggered an investigation, auto-run it in the UI if not already running
-    if (data.status === "INVESTIGATING" && data.customer_id) {
-        const btn = document.getElementById("start-btn");
-        if (!btn.disabled && document.getElementById("customer-id").value !== data.customer_id) {
-            document.getElementById("customer-id").value = data.customer_id;
-            runInvestigation(data.customer_id);
+    syncVoiceInvestigation(data);
+}
+
+// The webhook already runs the investigation; mirror its progress and show its
+// result rather than starting a second (costlier, possibly different) run.
+async function syncVoiceInvestigation(data) {
+    if (data.status === "INVESTIGATING") {
+        if (!voiceInProgress) {
+            voiceInProgress = true;
+            document.getElementById("customer-id").value = data.customer_id || "";
+            setRunning(true);
+        }
+        return;
+    }
+    if (voiceInProgress) {
+        voiceInProgress = false;
+        setRunning(false);
+    }
+    if (data.investigation_id && data.investigation_id !== voiceInvestigationShown) {
+        voiceInvestigationShown = data.investigation_id;
+        const res = await fetch("/api/v1/omi/result");
+        if (res.ok) {
+            const state = await res.json();
+            resetUI();
+            renderTrace(state.trace);
+            renderResults(state);
         }
     }
 }
@@ -102,7 +128,7 @@ function resetUI() {
 }
 
 function renderTrace(trace) {
-    if (!trace || !Array.length) return;
+    if (!trace || !trace.length) return;
     
     // Map tool_names to display names
     const nameMap = {
@@ -125,7 +151,7 @@ function renderTrace(trace) {
                 <span class="trace-agent">${li.querySelector('.trace-agent').textContent}</span>
                 <div class="trace-meta">
                     <span class="trace-duration">${durationStr}</span>
-                    <span class="trace-status status-${step.status}">${step.status}</span>
+                    <span class="trace-status status-${esc(step.status)}">${esc(step.status)}</span>
                 </div>
             `;
         }
@@ -142,7 +168,7 @@ function renderResults(state) {
     riskBadge.textContent = decision.risk_level.replace('_', ' ');
     riskBadge.className = `risk-badge risk-${decision.risk_level}`;
     
-    document.getElementById("risk-score-value").textContent = decision.risk_score || "N/A";
+    document.getElementById("risk-score-value").textContent = decision.risk_score ?? "N/A";
     document.getElementById("confidence-value").textContent = decision.confidence;
     
     // Style the recommendation
@@ -165,21 +191,21 @@ function renderResults(state) {
     sentences.forEach(s => {
         let text = s.trim();
         if (!text.endsWith('.')) text += '.';
-        richHtml += `<li>${text}</li>`;
+        richHtml += `<li>${esc(text)}</li>`;
     });
     richHtml += `</ul></div>`;
     
     if (decision.risk_factors && decision.risk_factors.length > 0) {
         richHtml += `<div class="factors-section factors-risk">
             <h4><span class="icon">⚠️</span> Risk Factors</h4>
-            <ul>${decision.risk_factors.map(f => `<li>${f}</li>`).join('')}</ul>
+            <ul>${decision.risk_factors.map(f => `<li>${esc(f)}</li>`).join('')}</ul>
         </div>`;
     }
     
     if (decision.positive_factors && decision.positive_factors.length > 0) {
         richHtml += `<div class="factors-section factors-positive">
             <h4><span class="icon">✅</span> Positive Factors</h4>
-            <ul>${decision.positive_factors.map(f => `<li>${f}</li>`).join('')}</ul>
+            <ul>${decision.positive_factors.map(f => `<li>${esc(f)}</li>`).join('')}</ul>
         </div>`;
     }
     
@@ -204,7 +230,7 @@ function renderResults(state) {
         
         if (evidenceItems.length > 0) {
             evidenceItems.slice(0, 3).forEach(item => {
-                 evidenceHtml += `<li>${item}</li>`;
+                 evidenceHtml += `<li>${esc(item)}</li>`;
             });
         } else {
             evidenceHtml = `<li class="no-evidence" style="color: rgba(255,255,255,0.4); list-style-type: none; padding-left: 0;">No notable indicators found.</li>`;
@@ -212,10 +238,10 @@ function renderResults(state) {
         
         const card = document.createElement("div");
         card.className = "breakdown-card-item";
-        const riskClass = cat.data[cat.levelKey] ? `risk-${cat.data[cat.levelKey]}` : '';
+        const riskClass = cat.data[cat.levelKey] ? `risk-${esc(cat.data[cat.levelKey])}` : '';
         
         card.innerHTML = `
-            <h3>${cat.title} <span class="breakdown-level ${riskClass}" style="background:none; border:none; padding:0; font-size:12px;">${cat.data[cat.levelKey]}</span></h3>
+            <h3>${cat.title} <span class="breakdown-level ${riskClass}" style="background:none; border:none; padding:0; font-size:12px;">${esc(cat.data[cat.levelKey])}</span></h3>
             <ul class="evidence-list">
                 ${evidenceHtml}
             </ul>
@@ -233,7 +259,7 @@ function renderResults(state) {
             
             // Extract key metrics from the dense Qdrant text
             const text = c.case_summary || "";
-            const extract = (regex) => (text.match(regex) || [])[1] || "N/A";
+            const extract = (regex) => esc((text.match(regex) || [])[1] || "N/A");
             
             const income = extract(/Annual income:\s*(₹[\d,.]+)/);
             const debt = extract(/Outstanding debt:\s*(₹[\d,.]+)/);
@@ -246,8 +272,8 @@ function renderResults(state) {
             div.className = "historical-item";
             div.innerHTML = `
                 <div class="historical-item-header">
-                    <span>${c.case_id}</span>
-                    <span class="sim-score">Similarity: ${(c.similarity_score || 0).toFixed(4)} <span class="risk-badge risk-${c.risk_level}">${c.risk_level}</span></span>
+                    <span>${esc(c.case_id)}</span>
+                    <span class="sim-score">Similarity: ${(c.similarity_score || 0).toFixed(4)} <span class="risk-badge risk-${esc(c.risk_level)}">${esc(c.risk_level)}</span></span>
                 </div>
                 <div class="historical-metrics-grid">
                     <div class="metric-chip"><span class="label">Income</span><span class="val">${income}</span></div>
@@ -263,19 +289,21 @@ function renderResults(state) {
     }
 }
 
-async function runInvestigation(customerId) {
-    resetUI();
+function setRunning(running) {
     const btn = document.getElementById("start-btn");
-    const ogText = btn.textContent;
-    btn.textContent = "Running Analysis...";
-    btn.disabled = true;
-    
-    // Set UI to running state for trace
+    btn.disabled = running;
+    btn.textContent = running ? "Running Analysis..." : "Analyze Risk";
+    if (!running) return;
+
+    resetUI();
     document.querySelectorAll('.trace-status').forEach(el => {
         el.textContent = "RUNNING";
         el.className = "trace-status status-RUNNING";
     });
-    
+}
+
+async function runInvestigation(customerId) {
+    setRunning(true);
     try {
         const response = await fetch("/api/v1/investigate", {
             method: "POST",
@@ -312,7 +340,6 @@ async function runInvestigation(customerId) {
         errEl.textContent = "Failed to connect to the server.";
         errEl.classList.remove("hidden");
     } finally {
-        btn.textContent = ogText;
-        btn.disabled = false;
+        setRunning(false);
     }
 }

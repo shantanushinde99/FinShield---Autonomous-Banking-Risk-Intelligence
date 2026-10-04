@@ -45,7 +45,7 @@ class InvestigationContextService:
                 total_exposure += profile.credit_amount
                 
             if profile.total_income and profile.total_income > 0 and total_exposure > 0:
-                income_to_debt_ratio = total_exposure / profile.total_income
+                income_to_debt_ratio = profile.total_income / total_exposure
                 
         if transaction_summary:
             if transaction_summary.fraud_transaction_count > 0 or transaction_summary.flagged_transaction_count > 0:

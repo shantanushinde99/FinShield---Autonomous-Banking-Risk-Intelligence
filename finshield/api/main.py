@@ -11,6 +11,9 @@ from finshield.api.omi_routes import router as omi_router
 from finshield.api.investigation_routes import router as investigation_router
 from finshield.models.api import APIError, ErrorDetails, HealthResponse
 from finshield.exceptions import CustomerNotFoundError
+from finshield.config.settings import settings
+from finshield.database.connection import get_duckdb_connection
+from finshield.qdrant.client import get_qdrant_client
 
 # Setup basic logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
@@ -24,7 +27,6 @@ async def lifespan(app: FastAPI):
     download_url = os.environ.get("DUCKDB_DOWNLOAD_URL", "")
     if download_url:
         import urllib.request
-        from finshield.config.settings import settings
         logger.info("Detected DUCKDB_DOWNLOAD_URL! Downloading database from Azure Blob Storage...")
         tmp_path = "/tmp/finshield.duckdb"
         try:
@@ -36,6 +38,8 @@ async def lifespan(app: FastAPI):
             logger.info(f"✅ Database successfully downloaded to {tmp_path}!")
         except Exception as e:
             logger.error(f"❌ Error downloading database: {e}")
+            # Fail startup: without the DB every investigation would 500
+            raise
     # -----------------------------
     yield
     # Cleanup (if any) happens here
@@ -97,18 +101,30 @@ app.include_router(investigation_router, prefix="/api/v1")
 async def health_check():
     return HealthResponse(status="healthy")
 
+def _probe(check) -> str:
+    try:
+        check()
+        return "available"
+    except Exception as e:
+        logger.warning(f"Dependency check failed: {e}")
+        return "unavailable"
+
+def _ping_duckdb():
+    with get_duckdb_connection() as con:
+        con.execute("SELECT 1")
+
 @app.get("/health/dependencies", response_model=HealthResponse)
-async def health_dependencies():
-    # In a real system, we'd ping DuckDB, Qdrant, etc.
-    # For now, we assume they are ok if the app started.
+def health_dependencies():
+    # Sync def: FastAPI runs it in a threadpool, so the blocking probes don't stall the loop.
+    # API keys are only checked for presence, to avoid spending quota on every health poll.
     dependencies = {
-        "FastAPI": "available",
-        "DuckDB": "available", 
-        "Qdrant": "available",
-        "Mistral": "available",
-        "Lyzr": "available",
+        "DuckDB": _probe(_ping_duckdb),
+        "Qdrant": _probe(lambda: get_qdrant_client().get_collection(settings.qdrant_collection_name)),
+        "Mistral": "configured" if settings.mistral_api_key else "unavailable",
+        "Lyzr": "configured" if os.environ.get("LYZR_API_KEY") else "unavailable",
     }
-    return HealthResponse(status="healthy", dependencies=dependencies)
+    status = "degraded" if "unavailable" in dependencies.values() else "healthy"
+    return HealthResponse(status=status, dependencies=dependencies)
 
 # Serve Frontend
 frontend_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")

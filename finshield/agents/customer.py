@@ -24,7 +24,7 @@ class CustomerProfileAgent:
                 stability_indicators.append("Owns hard assets (car or real estate)")
                 
             if profile.total_income and profile.total_income > 0:
-                completeness = "HIGH" if profile.employment_years and profile.age else "MEDIUM"
+                completeness = "HIGH" if profile.employment_years is not None and profile.age else "MEDIUM"
             
             if profile.age and profile.age < 21:
                 observations.append("Young demographic (under 21)")
